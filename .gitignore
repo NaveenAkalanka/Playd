@@ -33,3 +33,9 @@ dev-server.log
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local Claude Code config/docs — not part of the shipped app
+.claude
+AGENTS.md
+PLAN.md
+CLAUDE.md
