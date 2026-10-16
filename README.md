@@ -10,8 +10,6 @@
 
 I'd already watched or played hundreds of titles by the time I thought about tracking any of it, so a normal "add a title" form was a non-starter — typing in hundreds of entries one at a time is exactly the kind of friction that makes you give up on day one. Playd exists to solve that one problem: a **click-to-recognize discovery popup** shows posters of popular and recommended titles, and recognizing something and clicking it is the entire interaction. No ratings, no watch dates, no episode tracking, no notes — just "I've seen this." That constraint is deliberate; see [Product rules](#product-rules) below.
 
-The full story — the design decisions, the bugs I hit building and deploying it, and how each one got fixed — is in [`DOCUMENTATION.md`](./DOCUMENTATION.md).
-
 ## Features
 
 - **Discovery popup** — posters to click through, pulling in TMDB/IGDB recommendations as you go, mixed with fresh popular titles so it doesn't spiral into one genre.
@@ -42,8 +40,6 @@ The full story — the design decisions, the bugs I hit building and deploying i
 | Movie/TV data | [TMDB API](https://www.themoviedb.org/documentation/api) |
 | Game data | [IGDB API](https://api-docs.igdb.com) via Twitch developer credentials |
 | Hosting | [Netlify](https://www.netlify.com) |
-
-Full architecture notes — schema, auth flow, rate limiting, the discovery algorithm — are in [`DOCUMENTATION.md`](./DOCUMENTATION.md#architecture).
 
 ## Setup
 
@@ -117,15 +113,7 @@ This project is deployed on **Netlify**, connected directly to this GitHub repo 
 4. Deploy. Once you have your Netlify URL, register it as a **trusted domain** in your Neon project's Auth settings (Neon console → your project → Auth → Trusted domains) — Neon Auth only allows sign-in to complete for origins on that list, and without it you'll sign in and immediately get bounced back to the sign-in page with no visible error.
 5. Optional: Netlify shows a "Powered by Netlify" badge on new free-tier sites. Turn it off under **Project configuration → General → Powered by Netlify badge**, if you'd rather not have it.
 
-See [`DOCUMENTATION.md`](./DOCUMENTATION.md#issues-encountered--how-they-were-solved) for the full story behind steps 3 and 4 — both came from real deploy failures while building this.
-
-## Full documentation
-
-[`DOCUMENTATION.md`](./DOCUMENTATION.md) covers everything above in depth, plus:
-
-- The full architecture (database schema, auth/access-control, rate limiting, caching, the discovery-popup algorithm)
-- A complete project file tour
-- Every real issue hit while building and deploying this, and exactly how it was fixed
+Steps 3 and 4 both came from real deploy failures hit while building this — Netlify's secrets scanner flags the Next.js build cache as a false positive (fixed with those two env vars, no code change), and Neon Auth only completes sign-in for origins on its trusted-domains allowlist (fixed by registering the deployed URL there).
 
 ## Attribution
 
