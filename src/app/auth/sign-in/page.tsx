@@ -56,6 +56,15 @@ export default function SignInPage() {
         </div>
       )}
 
+      <div className="flex w-full max-w-sm justify-end">
+        <Link
+          href="/auth/forgot-password"
+          className="text-sm text-text-muted hover:text-foreground"
+        >
+          Forgot password?
+        </Link>
+      </div>
+
       <button
         type="submit"
         disabled={isPending}

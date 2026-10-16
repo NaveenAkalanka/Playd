@@ -15,7 +15,9 @@ import {
 import { markWishlistItemWatched, removeFromWishlist } from "@/lib/actions/wishlist";
 import { useViewMode } from "@/lib/use-view-mode";
 import { useProgressiveReveal } from "@/lib/use-progressive-reveal";
+import { useUndoToast } from "@/components/undo-toast-provider";
 import { applyFilterSort, deriveGenreOptions, deriveLanguageOptions } from "@/lib/filter-sort";
+import { externalInfoUrl } from "@/lib/external-links";
 import { cn } from "@/lib/utils";
 import type { MediaType } from "@/lib/normalize";
 
@@ -38,6 +40,7 @@ const gridColsClass: Record<"sm" | "md" | "lg", string> = {
 
 export function WishlistGrid({ items }: { items: WishlistItem[] }) {
   const router = useRouter();
+  const { showUndoToast } = useUndoToast();
   const [viewMode, setViewMode] = useViewMode();
   const [sortMode, setSortMode] = useState<SortMode>("added");
   const [genreFilter, setGenreFilter] = useState("");
@@ -62,11 +65,31 @@ export function WishlistGrid({ items }: { items: WishlistItem[] }) {
     router.refresh();
   }
 
+  async function handleCopyTitle(item: WishlistItem) {
+    try {
+      await navigator.clipboard.writeText(item.title);
+      showUndoToast({ title: item.title, action: "Copied" });
+    } catch {
+      // Clipboard access denied/unavailable — nothing sensible to do.
+    }
+  }
+
+  function handleViewMoreInfo(item: WishlistItem) {
+    window.open(
+      externalInfoUrl(item.mediaType, item.sourceId, item.title),
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }
+
   function menuItemsFor(item: WishlistItem) {
     return (
       <ContextMenuContent>
         <ContextMenuItem onSelect={() => handleMarkWatched(item)}>
           Mark as watched
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => handleViewMoreInfo(item)}>
+          View more info
         </ContextMenuItem>
         <ContextMenuItem variant="destructive" onSelect={() => handleRemove(item)}>
           Remove
@@ -111,7 +134,7 @@ export function WishlistGrid({ items }: { items: WishlistItem[] }) {
                         title={item.title}
                         year={item.year}
                         posterUrl={item.posterUrl}
-                        onClick={() => handleMarkWatched(item)}
+                        onClick={() => handleCopyTitle(item)}
                       />
                     </div>
                   </ContextMenuTrigger>
@@ -129,7 +152,7 @@ export function WishlistGrid({ items }: { items: WishlistItem[] }) {
                         title={item.title}
                         year={item.year}
                         posterUrl={item.posterUrl}
-                        onClick={() => handleMarkWatched(item)}
+                        onClick={() => handleCopyTitle(item)}
                       />
                     </div>
                   </ContextMenuTrigger>

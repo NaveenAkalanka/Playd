@@ -17,11 +17,13 @@ import { moveToWishlist } from "@/lib/actions/wishlist";
 import { useViewMode } from "@/lib/use-view-mode";
 import { useProgressiveReveal } from "@/lib/use-progressive-reveal";
 import { applyFilterSort, deriveGenreOptions, deriveLanguageOptions } from "@/lib/filter-sort";
+import { externalInfoUrl } from "@/lib/external-links";
 import { cn } from "@/lib/utils";
 import type { MediaType } from "@/lib/normalize";
 
 interface LibraryItem {
   id: number;
+  sourceId: number;
   title: string;
   year: number | null;
   posterUrl: string | null;
@@ -75,6 +77,14 @@ export function LibraryGrid({
     router.refresh();
   }
 
+  function handleViewMoreInfo(item: LibraryItem) {
+    window.open(
+      externalInfoUrl(mediaType, item.sourceId, item.title),
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }
+
   function menuItemsFor(item: LibraryItem) {
     return (
       <ContextMenuContent>
@@ -83,6 +93,9 @@ export function LibraryGrid({
         </ContextMenuItem>
         <ContextMenuItem onSelect={() => handleMoveToWishlist(item.id)}>
           Move to wishlist
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => handleViewMoreInfo(item)}>
+          View more info
         </ContextMenuItem>
         <ContextMenuItem variant="destructive" onSelect={() => handleRemove(item.id)}>
           Remove

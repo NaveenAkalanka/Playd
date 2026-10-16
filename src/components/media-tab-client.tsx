@@ -8,6 +8,7 @@ import type { MediaType } from "@/lib/normalize";
 
 interface LibraryItem {
   id: number;
+  sourceId: number;
   title: string;
   year: number | null;
   posterUrl: string | null;

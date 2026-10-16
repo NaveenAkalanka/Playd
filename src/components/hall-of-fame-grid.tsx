@@ -16,11 +16,13 @@ import { setFavorite } from "@/lib/actions/items";
 import { useViewMode } from "@/lib/use-view-mode";
 import { useProgressiveReveal } from "@/lib/use-progressive-reveal";
 import { applyFilterSort, deriveGenreOptions, deriveLanguageOptions } from "@/lib/filter-sort";
+import { externalInfoUrl } from "@/lib/external-links";
 import { cn } from "@/lib/utils";
 import type { MediaType } from "@/lib/normalize";
 
 interface FavoriteItem {
   id: number;
+  sourceId: number;
   title: string;
   year: number | null;
   posterUrl: string | null;
@@ -61,9 +63,20 @@ export function HallOfFameGrid({
     router.refresh();
   }
 
+  function handleViewMoreInfo(item: FavoriteItem) {
+    window.open(
+      externalInfoUrl(mediaType, item.sourceId, item.title),
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }
+
   function menuItemsFor(item: FavoriteItem) {
     return (
       <ContextMenuContent>
+        <ContextMenuItem onSelect={() => handleViewMoreInfo(item)}>
+          View more info
+        </ContextMenuItem>
         <ContextMenuItem variant="destructive" onSelect={() => handleRemove(item.id)}>
           Remove from Hall of Fame
         </ContextMenuItem>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Search } from "lucide-react";
+import { Search, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -72,6 +72,16 @@ export function TopNav() {
           className="text-text-muted transition-colors hover:text-foreground"
         >
           <Search className="size-5" />
+        </Link>
+        <Link
+          href="/account"
+          aria-label="Account"
+          className={cn(
+            "text-text-muted transition-colors hover:text-foreground",
+            pathname.startsWith("/account") && "text-accent hover:text-accent",
+          )}
+        >
+          <User className="size-5" />
         </Link>
         <SignOutButton className="text-text-muted transition-colors hover:text-foreground" />
       </div>

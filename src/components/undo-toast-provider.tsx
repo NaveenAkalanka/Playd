@@ -4,7 +4,8 @@ import { createContext, useCallback, useContext, useRef, useState } from "react"
 
 interface UndoToastState {
   title: string;
-  onUndo: () => void;
+  // Omitted for a plain status message (e.g. "Copied") with no undo step.
+  onUndo?: () => void;
   action?: string;
 }
 
@@ -35,17 +36,19 @@ export function UndoToastProvider({
             <span>
               {toast.action ?? "Added"} <span className="font-medium">{toast.title}</span>
             </span>
-            <button
-              type="button"
-              onClick={() => {
-                toast.onUndo();
-                setToast(null);
-                if (timerRef.current) clearTimeout(timerRef.current);
-              }}
-              className="font-semibold text-accent hover:text-accent-hover"
-            >
-              Undo
-            </button>
+            {toast.onUndo && (
+              <button
+                type="button"
+                onClick={() => {
+                  toast.onUndo?.();
+                  setToast(null);
+                  if (timerRef.current) clearTimeout(timerRef.current);
+                }}
+                className="font-semibold text-accent hover:text-accent-hover"
+              >
+                Undo
+              </button>
+            )}
           </div>
         </div>
       )}
