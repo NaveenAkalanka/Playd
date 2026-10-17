@@ -109,7 +109,7 @@ This project is deployed on **Netlify**, connected directly to this GitHub repo 
 2. Add every variable from [`.env.example`](./.env.example) under Netlify **Site configuration → Environment variables**.
 3. Netlify's build-output secrets scanner will flag Next.js's build cache (which stores raw env values for cache invalidation) as a false positive. Add two more environment variables to silence it:
    - `SECRETS_SCAN_OMIT_PATHS` = `.netlify/.next/cache/**,.next/cache/**`
-   - `SECRETS_SCAN_OMIT_KEYS` = `NEON_BRANCH` (its value, `production`, coincidentally matches text throughout framework source)
+   - `SECRETS_SCAN_OMIT_KEYS` = `NEON_BRANCH,SECRETS_SCAN_OMIT_KEYS,SECRETS_SCAN_OMIT_PATHS` (`NEON_BRANCH`'s value, `production`, coincidentally matches text throughout framework source; the other two keys exempt their own values from being scanned for too — once they're configured, the scanner treats their literal values as secrets as well, and this README documenting those exact values is enough to trip it otherwise)
 4. Deploy. Once you have your Netlify URL, register it as a **trusted domain** in your Neon project's Auth settings (Neon console → your project → Auth → Trusted domains) — Neon Auth only allows sign-in to complete for origins on that list, and without it you'll sign in and immediately get bounced back to the sign-in page with no visible error.
 5. Optional: Netlify shows a "Powered by Netlify" badge on new free-tier sites. Turn it off under **Project configuration → General → Powered by Netlify badge**, if you'd rather not have it.
 
