@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Search, User } from "lucide-react";
+import { CircleHelp, Search, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -72,6 +72,17 @@ export function TopNav() {
           className="text-text-muted transition-colors hover:text-foreground"
         >
           <Search className="size-5" />
+        </Link>
+        <Link
+          href="/guide"
+          aria-label="Guide"
+          title="Guide"
+          className={cn(
+            "text-text-muted transition-colors hover:text-foreground",
+            pathname.startsWith("/guide") && "text-accent hover:text-accent",
+          )}
+        >
+          <CircleHelp className="size-5" />
         </Link>
         <Link
           href="/account"

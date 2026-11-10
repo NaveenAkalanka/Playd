@@ -7,6 +7,11 @@ const nextConfig: NextConfig = {
   // longer exist (which surfaced as intermittent "not found" pages after
   // each auto-deploy). Undefined locally, so dev is unaffected.
   deploymentId: process.env.DEPLOY_ID || undefined,
+  // Shown on the Guide page's Developer section. Netlify sets COMMIT_REF at
+  // build time; it's inlined here so the running app doesn't need it.
+  env: {
+    NEXT_PUBLIC_BUILD_COMMIT: (process.env.COMMIT_REF ?? "").slice(0, 7),
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "image.tmdb.org" },
