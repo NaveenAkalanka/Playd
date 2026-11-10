@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Version-skew protection. Netlify sets DEPLOY_ID at build time; with it,
+  // a tab still running an older deploy gets a full reload on its next
+  // navigation instead of requesting JS chunks / Server Action IDs that no
+  // longer exist (which surfaced as intermittent "not found" pages after
+  // each auto-deploy). Undefined locally, so dev is unaffected.
+  deploymentId: process.env.DEPLOY_ID || undefined,
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "image.tmdb.org" },

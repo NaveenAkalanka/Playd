@@ -54,25 +54,45 @@ async function throttle() {
   recentRequestTimestamps.push(now);
 }
 
+const MAX_ATTEMPTS = 4;
+
+// The in-process throttle above only sees this one server instance. On
+// serverless hosting, parallel server actions (the Discover popup fires
+// several per click) can land on different instances, so IGDB's 4 req/s
+// limit can still be exceeded and answered with 429. Back off and retry
+// instead of failing the whole action. A 401 means the cached token was
+// revoked/rotated: drop it and fetch a fresh one once.
 async function igdbFetch<T>(endpoint: string, query: string): Promise<T> {
-  await throttle();
-  const accessToken = await getAccessToken();
+  let lastStatus = 0;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    await throttle();
+    const accessToken = await getAccessToken();
 
-  const res = await fetch(`${IGDB_BASE_URL}/${endpoint}`, {
-    method: "POST",
-    headers: {
-      "Client-ID": process.env.TWITCH_CLIENT_ID!,
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "text/plain",
-    },
-    body: query,
-  });
+    const res = await fetch(`${IGDB_BASE_URL}/${endpoint}`, {
+      method: "POST",
+      headers: {
+        "Client-ID": process.env.TWITCH_CLIENT_ID!,
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "text/plain",
+      },
+      body: query,
+    });
 
-  if (!res.ok) {
-    throw new Error(`IGDB request failed: ${res.status} ${endpoint}`);
+    if (res.ok) return res.json() as Promise<T>;
+
+    lastStatus = res.status;
+    const retryable = res.status === 429 || res.status === 401 || res.status >= 500;
+    if (!retryable || attempt === MAX_ATTEMPTS) break;
+    if (res.status === 401) cachedToken = null;
+
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const backoffMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter * 1000
+      : 250 * 2 ** (attempt - 1) + Math.random() * 200;
+    await new Promise((resolve) => setTimeout(resolve, backoffMs));
   }
 
-  return res.json() as Promise<T>;
+  throw new Error(`IGDB request failed: ${lastStatus} ${endpoint}`);
 }
 
 interface IgdbGenre {
@@ -232,7 +252,13 @@ export async function getGameDetails(
       "games",
       `fields name,cover.url,first_release_date,genres.name; where id = ${igdbId};`,
     ),
-    getGameTimesToBeat([igdbId]),
+    // Playtime is a nice-to-have: if IGDB's time-to-beat lookup fails, still
+    // add the game (runtime left null, fillable later via the backfill route)
+    // instead of failing the whole add.
+    getGameTimesToBeat([igdbId]).catch((error) => {
+      console.error(`[igdb] time-to-beat lookup failed for ${igdbId}`, error);
+      return new Map<number, number>();
+    }),
   ]);
 
   const [game] = games;

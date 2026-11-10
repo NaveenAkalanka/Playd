@@ -3,9 +3,9 @@ import {
   ArrowUpRight,
   Bookmark,
   CalendarPlus,
-  Clock,
   Film,
   Gamepad2,
+  Hourglass,
   LayoutDashboard,
   Sparkles,
   Timer,
@@ -51,6 +51,24 @@ function fmtDuration(minutes: number | null) {
   return h ? `${h}h ${m}m` : `${m}m`;
 }
 
+const MIN_PER_HOUR = 60;
+const MIN_PER_DAY = 24 * MIN_PER_HOUR;
+// Calendar-agnostic units: a month is 30 days, a year 365 days.
+const MIN_PER_MONTH = 30 * MIN_PER_DAY;
+const MIN_PER_YEAR = 365 * MIN_PER_DAY;
+
+function splitDuration(totalMinutes: number) {
+  let rest = Math.max(0, Math.round(totalMinutes));
+  const years = Math.floor(rest / MIN_PER_YEAR);
+  rest -= years * MIN_PER_YEAR;
+  const months = Math.floor(rest / MIN_PER_MONTH);
+  rest -= months * MIN_PER_MONTH;
+  const days = Math.floor(rest / MIN_PER_DAY);
+  rest -= days * MIN_PER_DAY;
+  const hours = Math.floor(rest / MIN_PER_HOUR);
+  return { years, months, days, hours };
+}
+
 const cardBase =
   "animate-fade-up rounded-xl border border-border bg-gradient-to-br from-surface to-surface-2/30";
 const cardHover =
@@ -62,6 +80,7 @@ function Tile({
   hint,
   icon: Icon,
   featured,
+  wide,
   i = 0,
 }: {
   label: string;
@@ -69,6 +88,8 @@ function Tile({
   hint?: string;
   icon?: React.ComponentType<{ className?: string }>;
   featured?: boolean;
+  /** Spans both columns of the 2-column phone grid (avoids an orphan tile). */
+  wide?: boolean;
   i?: number;
 }) {
   return (
@@ -77,22 +98,25 @@ function Tile({
       className={cn(
         cardBase,
         cardHover,
-        "relative overflow-hidden p-4",
+        "relative min-w-0 overflow-hidden p-4",
         featured && "border-accent/40 from-accent/20 via-surface to-surface",
+        wide && "col-span-2 lg:col-span-1",
       )}
     >
       {Icon ? (
         <span
           className={cn(
-            "absolute right-3 top-3 flex size-8 items-center justify-center rounded-lg bg-surface-2 text-text-muted",
+            "absolute right-3 top-3 hidden size-8 items-center justify-center rounded-lg bg-surface-2 text-text-muted sm:flex",
             featured && "bg-accent/20 text-accent",
           )}
         >
           <Icon className="size-4" />
         </span>
       ) : null}
-      <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">{label}</p>
-      <p className="mt-2 truncate pr-8 text-3xl font-extrabold tabular-nums tracking-tight">
+      <p className="text-[11px] font-medium uppercase leading-tight tracking-wider text-text-muted sm:pr-10">
+        {label}
+      </p>
+      <p className="mt-2 truncate text-3xl font-extrabold tabular-nums tracking-tight">
         <Value v={value} />
       </p>
       {hint ? <p className="mt-1 truncate text-xs text-text-muted/80">{hint}</p> : null}
@@ -123,6 +147,101 @@ function Card({
 }
 
 const noData = <p className="text-sm text-text-muted">No data yet.</p>;
+
+/**
+ * Total time spent, broken down into years / months / days / hours.
+ * Leading zero units are dimmed so the first meaningful unit stands out.
+ */
+function PlaytimeCard({
+  title,
+  minutes,
+  count,
+  noun,
+  breakdown,
+  i = 0,
+}: {
+  title: string;
+  minutes: number | null;
+  count: number;
+  noun: string;
+  /** Optional per-type split shown under the units (overall panel only). */
+  breakdown?: { label: string; color: string; minutes: number | null }[];
+  i?: number;
+}) {
+  const parts = minutes == null ? null : splitDuration(minutes);
+  const units: [string, number][] = parts
+    ? [
+        ["Years", parts.years],
+        ["Months", parts.months],
+        ["Days", parts.days],
+        ["Hours", parts.hours],
+      ]
+    : [];
+  const firstNonZero = units.findIndex(([, v]) => v > 0);
+
+  return (
+    <div
+      style={delay(i)}
+      className={cn(
+        cardBase,
+        "relative overflow-hidden border-accent/30 from-accent/15 via-surface to-surface p-5",
+      )}
+    >
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-bold">{title}</h3>
+          <p className="text-xs text-text-muted">
+            {minutes == null
+              ? "No runtime data yet"
+              : `${Math.round(minutes / 60).toLocaleString("en-US")} hours across ${count.toLocaleString("en-US")} ${noun}`}
+          </p>
+        </div>
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent/20 text-accent">
+          <Hourglass className="size-4" />
+        </span>
+      </div>
+
+      {parts == null ? (
+        noData
+      ) : (
+        <dl className="grid grid-cols-4 divide-x divide-border/70 rounded-lg border border-border/70 bg-bg/40">
+          {units.map(([label, value], n) => {
+            const dim = firstNonZero === -1 ? n < units.length - 1 : n < firstNonZero;
+            return (
+              <div key={label} className="flex min-w-0 flex-col-reverse items-center px-1 py-4 sm:py-5">
+                <dt className="mt-1 truncate text-[11px] uppercase tracking-wider text-text-muted">
+                  {label}
+                </dt>
+                <dd
+                  className={cn(
+                    "text-3xl font-extrabold tabular-nums tracking-tight sm:text-5xl",
+                    dim ? "text-text-muted/40" : n === firstNonZero ? "text-accent" : "text-text",
+                  )}
+                >
+                  <CountUp value={value} />
+                </dd>
+              </div>
+            );
+          })}
+        </dl>
+      )}
+
+      {breakdown && parts != null ? (
+        <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-text-muted">
+          {breakdown.map((b) => (
+            <li key={b.label} className="flex items-center gap-1.5">
+              <span className="size-2 rounded-full" style={{ background: b.color }} />
+              {b.label}
+              <span className="tabular-nums text-text">
+                {b.minutes == null ? "—" : `${Math.round(b.minutes / 60).toLocaleString("en-US")}h`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 /** Horizontal ranked bars; the leader is full-strength, the rest softer. */
 function Bars({
@@ -244,14 +363,19 @@ function LibraryMix({ data, i = 0 }: { data: Dashboard; i?: number }) {
           />
         ))}
       </div>
-      <ul className="mt-4 grid grid-cols-3 gap-3 text-sm">
+      <ul className="mt-5 divide-y divide-border text-sm">
         {types.map((t) => {
           const count = data.byType[t.type].count;
           return (
-            <li key={t.type} className="flex items-center gap-2">
+            <li key={t.type} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
               <span className="size-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
-              <span className="truncate text-text-muted">{t.label}</span>
-              <span className="ml-auto tabular-nums">{Math.round((count / total) * 100)}%</span>
+              <span className="text-text-muted">{t.label}</span>
+              <span className="ml-auto tabular-nums text-text-muted">
+                {count.toLocaleString("en-US")}
+              </span>
+              <span className="w-11 text-right font-semibold tabular-nums">
+                {Math.round((count / total) * 100)}%
+              </span>
             </li>
           );
         })}
@@ -309,12 +433,17 @@ function CategoryCard({
 }) {
   const stats: [string, number | string][] = [
     ["Titles", fmt(s.count)],
-    [t.timeLabel, fmt(s.hours)],
+    ["Hours", fmt(s.hours)],
     ["This month", fmt(s.addedThisMonth)],
     ["Wishlist", fmt(s.wishlistCount)],
   ];
   return (
-    <div style={delay(i)} className={cn(cardBase, cardHover, "group p-5")}>
+    <Link
+      href={t.href}
+      aria-label={`Open ${t.label}`}
+      style={delay(i)}
+      className={cn(cardBase, cardHover, "group block p-5 outline-none focus-visible:ring-2 focus-visible:ring-accent")}
+    >
       <div className="flex items-center gap-3">
         <span
           className="flex size-9 items-center justify-center rounded-lg text-white"
@@ -323,7 +452,10 @@ function CategoryCard({
           <t.icon className="size-4.5" />
         </span>
         <h3 className="font-bold">{t.label}</h3>
-        <span className="ml-auto text-xs text-text-muted">{Math.round(share)}% of library</span>
+        <span className="ml-auto flex items-center gap-1 text-xs text-text-muted">
+          {Math.round(share)}% of library
+          <ArrowUpRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
+        </span>
       </div>
       <dl className="mt-5 grid grid-cols-4 gap-2">
         {stats.map(([label, value]) => (
@@ -335,7 +467,7 @@ function CategoryCard({
           </div>
         ))}
       </dl>
-    </div>
+    </Link>
   );
 }
 
@@ -345,19 +477,32 @@ export function DashboardView({ data }: { data: Dashboard }) {
 
   const overallPanel = (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      {/* Hours live in the playtime card below, so no separate hours tile. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile featured icon={Sparkles} i={0} label="Total titles" value={fmt(overall.count)} />
-        <Tile icon={Clock} i={1} label="Total hours" value={fmt(overall.hours)} />
-        <Tile icon={CalendarPlus} i={2} label="Added this month" value={fmt(overall.addedThisMonth)} />
-        <Tile icon={Bookmark} i={3} label="On wishlist" value={fmt(overall.wishlistCount)} />
+        <Tile icon={CalendarPlus} i={1} label="Added this month" value={fmt(overall.addedThisMonth)} />
+        <Tile icon={Bookmark} i={2} label="On wishlist" value={fmt(overall.wishlistCount)} />
         <Tile
           icon={Trophy}
-          i={4}
+          i={3}
           label="Top genre"
           value={top?.label ?? "—"}
           hint={top ? `${top.count} titles` : undefined}
         />
       </div>
+
+      <PlaytimeCard
+        i={5}
+        title="Total playtime"
+        minutes={overall.minutes}
+        count={overall.count}
+        noun="titles"
+        breakdown={types.map((t) => ({
+          label: t.label,
+          color: t.color,
+          minutes: byType[t.type].minutes,
+        }))}
+      />
 
       <div className="grid gap-4 md:grid-cols-3">
         {types.map((t, n) => (
@@ -396,10 +541,21 @@ export function DashboardView({ data }: { data: Dashboard }) {
           <p className="py-10 text-center text-text-muted">Nothing logged yet.</p>
         ) : (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-              <Tile featured icon={t.icon} i={0} label={`Total ${t.noun}`} value={fmt(s.count)} />
+            <div
+              className={cn(
+                "grid grid-cols-2 gap-3",
+                s.recentReleasePct != null ? "lg:grid-cols-5" : "lg:grid-cols-4",
+              )}
+            >
+              <Tile
+                featured
+                wide={s.recentReleasePct != null}
+                icon={t.icon}
+                i={0}
+                label={`Total ${t.noun}`}
+                value={fmt(s.count)}
+              />
               <Tile icon={Bookmark} i={1} label="On wishlist" value={fmt(s.wishlistCount)} />
-              <Tile icon={Clock} i={2} label={t.timeLabel} value={fmt(s.hours)} />
               <Tile
                 icon={Timer}
                 i={3}
@@ -417,6 +573,13 @@ export function DashboardView({ data }: { data: Dashboard }) {
                 <Tile icon={Sparkles} i={5} label="Last 10 years" value={`${s.recentReleasePct}%`} />
               ) : null}
             </div>
+            <PlaytimeCard
+              i={6}
+              title={t.type === "game" ? "Total time played" : "Total time watched"}
+              minutes={s.minutes}
+              count={s.count}
+              noun={t.noun}
+            />
             <div className="grid gap-4 lg:grid-cols-2">
               <Bars i={5} title="Top genres" rows={s.topGenres} />
               <Columns i={6} title="Titles by decade" subtitle="By release year" rows={s.decades} />
@@ -427,7 +590,7 @@ export function DashboardView({ data }: { data: Dashboard }) {
             </div>
             <div className="space-y-4 pt-2">
               <Recent items={s.recent} href={t.href} />
-              <Recent title="Wishlist" items={s.wishlist} href={t.href} />
+              <Recent title="Wishlist" items={s.wishlist} href={`/wishlist?type=${t.type}`} />
             </div>
           </div>
         ),

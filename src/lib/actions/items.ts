@@ -49,11 +49,73 @@ export async function addItem(
   return inserted ?? null;
 }
 
-export async function removeItem(mediaType: MediaType, id: number) {
+/** What Undo needs to put a removed title back exactly as it was. */
+export interface RemovedItem {
+  sourceId: number;
+  title: string;
+  year: number | null;
+  posterUrl: string | null;
+  backdropUrl: string | null;
+  genres: string[] | null;
+  runtimeMinutes: number | null;
+  originalLanguage: string | null;
+  isFavorite: boolean;
+  addedAt: Date | null;
+}
+
+export async function removeItem(
+  mediaType: MediaType,
+  id: number,
+): Promise<RemovedItem | null> {
   const user = await requireAllowedUserOrThrow();
   const table = libraryTable(mediaType);
 
-  await db.delete(table).where(and(eq(table.id, id), eq(table.userId, user.id)));
+  const [removed] = await db
+    .delete(table)
+    .where(and(eq(table.id, id), eq(table.userId, user.id)))
+    .returning({
+      sourceId: table.sourceId,
+      title: table.title,
+      year: table.year,
+      posterUrl: table.posterUrl,
+      backdropUrl: table.backdropUrl,
+      genres: table.genres,
+      runtimeMinutes: table.runtimeMinutes,
+      originalLanguage: table.originalLanguage,
+      isFavorite: table.isFavorite,
+      addedAt: table.addedAt,
+    });
+
+  return removed ?? null;
+}
+
+/**
+ * Undo for removeItem: re-insert the snapshot it returned, keeping the
+ * original added date and Hall of Fame flag so stats don't shift.
+ */
+export async function restoreItem(mediaType: MediaType, item: RemovedItem) {
+  const user = await requireAllowedUserOrThrow();
+  const table = libraryTable(mediaType);
+  if (!Number.isInteger(item.sourceId) || item.sourceId <= 0) {
+    throw new Error("Invalid item");
+  }
+
+  await db
+    .insert(table)
+    .values({
+      userId: user.id,
+      sourceId: item.sourceId,
+      title: String(item.title).slice(0, 500),
+      year: item.year,
+      posterUrl: item.posterUrl,
+      backdropUrl: item.backdropUrl,
+      genres: item.genres,
+      runtimeMinutes: item.runtimeMinutes,
+      originalLanguage: item.originalLanguage,
+      isFavorite: Boolean(item.isFavorite),
+      addedAt: item.addedAt ? new Date(item.addedAt) : new Date(),
+    })
+    .onConflictDoNothing();
 }
 
 export async function setFavorite(mediaType: MediaType, id: number, isFavorite: boolean) {

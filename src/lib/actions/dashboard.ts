@@ -29,6 +29,8 @@ export interface Section {
   count: number;
   /** Total hours (rounded); null when no runtime data exists. */
   hours: number | null;
+  /** Exact total minutes (unrounded); null when no runtime data exists. */
+  minutes: number | null;
   addedThisMonth: number;
   topGenres: BarRow[];
   decades: BarRow[];
@@ -69,9 +71,9 @@ type Row = {
   addedAt: Date | null;
 };
 
-function hoursOf(rows: Row[]): number | null {
+function minutesOf(rows: Row[]): number | null {
   if (!rows.some((r) => r.runtimeMinutes != null)) return null;
-  return Math.round(rows.reduce((s, r) => s + (r.runtimeMinutes ?? 0), 0) / 60);
+  return rows.reduce((s, r) => s + (r.runtimeMinutes ?? 0), 0);
 }
 
 function monthKey(d: Date) {
@@ -105,9 +107,12 @@ function section(rows: Row[], now: Date): Section {
     addedByMonth.push({ label, count: byMonth.get(k) ?? 0 });
   }
 
+  const minutes = minutesOf(rows);
+
   return {
     count: rows.length,
-    hours: hoursOf(rows),
+    hours: minutes == null ? null : Math.round(minutes / 60),
+    minutes,
     addedThisMonth: byMonth.get(nowKey) ?? 0,
     topGenres: [...genres.entries()]
       .map(([label, count]) => ({ label, count }))

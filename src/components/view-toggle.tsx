@@ -18,15 +18,16 @@ export function ViewToggle({
   onChange: (mode: ViewMode) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 rounded-md border border-border bg-surface-2 p-1">
+    <div className="flex h-9 items-center gap-0.5 rounded-md border border-border bg-surface-2 p-1">
       {sizes.map((size) => (
         <button
           key={size.mode}
           type="button"
           onClick={() => onChange(size.mode)}
+          aria-pressed={mode === size.mode}
           aria-label={`${size.label === "S" ? "Small" : size.label === "M" ? "Medium" : "Large"} cards`}
           className={cn(
-            "size-6 rounded-sm text-xs font-semibold transition-colors",
+            "size-7 rounded-sm text-xs font-semibold transition-colors",
             mode === size.mode
               ? "bg-accent text-white"
               : "text-text-muted hover:text-foreground",
@@ -38,9 +39,10 @@ export function ViewToggle({
       <button
         type="button"
         onClick={() => onChange("list")}
+        aria-pressed={mode === "list"}
         aria-label="List view"
         className={cn(
-          "flex size-6 items-center justify-center rounded-sm transition-colors",
+          "flex size-7 items-center justify-center rounded-sm transition-colors",
           mode === "list"
             ? "bg-accent text-white"
             : "text-text-muted hover:text-foreground",

@@ -38,8 +38,15 @@ export function TitleListRow({
       )}
     >
       <div className="relative h-14 w-10 shrink-0 overflow-hidden rounded-[4px] bg-surface-2">
-        {posterUrl && (
+        {posterUrl ? (
           <Image src={posterUrl} alt={title} fill sizes="40px" className="object-cover" />
+        ) : (
+          <span
+            aria-hidden="true"
+            className="flex h-full items-center justify-center bg-gradient-to-br from-surface-2 to-surface text-lg font-black text-accent/80"
+          >
+            {title.trim().match(/[\p{L}\p{N}]/u)?.[0]?.toUpperCase() ?? "?"}
+          </span>
         )}
       </div>
       <p className="min-w-0 flex-1 truncate text-sm font-medium">{title}</p>

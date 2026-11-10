@@ -12,12 +12,16 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { removeItem, setFavorite } from "@/lib/actions/items";
+import { removeItem, restoreItem, setFavorite } from "@/lib/actions/items";
+import { useOptimisticItems } from "@/lib/use-optimistic-items";
 import { moveToWishlist } from "@/lib/actions/wishlist";
 import { useViewMode } from "@/lib/use-view-mode";
+import { useUndoToast } from "@/components/undo-toast-provider";
 import { useProgressiveReveal } from "@/lib/use-progressive-reveal";
-import { applyFilterSort, deriveGenreOptions, deriveLanguageOptions } from "@/lib/filter-sort";
+import { applyFilterSort, deriveGenreOptions, deriveLanguageOptions, deriveYearOptions } from "@/lib/filter-sort";
 import { externalInfoUrl } from "@/lib/external-links";
+import { EmptyState, emptyActionClass } from "@/components/empty-state";
+import { Compass, Film, Gamepad2, SearchX, Tv } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MediaType } from "@/lib/normalize";
 
@@ -40,41 +44,104 @@ const gridColsClass: Record<"sm" | "md" | "lg", string> = {
   lg: "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5",
 };
 
+const emptyIcon: Record<MediaType, React.ComponentType<{ className?: string }>> = {
+  movie: Film,
+  tv: Tv,
+  game: Gamepad2,
+};
+const noun: Record<MediaType, string> = { movie: "movies", tv: "series", game: "games" };
+
 export function LibraryGrid({
   mediaType,
-  items,
+  items: serverItems,
+  onDiscover,
 }: {
   mediaType: MediaType;
   items: LibraryItem[];
+  /** Opens the discovery popup; offered as the empty-state action. */
+  onDiscover?: () => void;
 }) {
   const router = useRouter();
+  const { showUndoToast } = useUndoToast();
+  const { items, hide, unhide, patch, unpatch } = useOptimisticItems(serverItems);
   const [viewMode, setViewMode] = useViewMode();
   const [sortMode, setSortMode] = useState<SortMode>("added");
   const [genreFilter, setGenreFilter] = useState("");
   const [yearFilter, setYearFilter] = useState("");
   const [languageFilter, setLanguageFilter] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const genreOptions = useMemo(() => deriveGenreOptions(items), [items]);
   const languageOptions = useMemo(() => deriveLanguageOptions(items), [items]);
+  const yearOptions = useMemo(() => deriveYearOptions(items), [items]);
   const visibleItems = useMemo(
-    () => applyFilterSort(items, { genreFilter, yearFilter, languageFilter, sortMode }),
-    [items, genreFilter, yearFilter, languageFilter, sortMode],
+    () =>
+      applyFilterSort(items, {
+        genreFilter,
+        yearFilter,
+        languageFilter,
+        sortMode,
+        query: searchQuery,
+      }),
+    [items, genreFilter, yearFilter, languageFilter, sortMode, searchQuery],
   );
-  const { visibleItems: revealed, hasMore, sentinelRef } = useProgressiveReveal(visibleItems);
+  const { visibleItems: revealed, hasMore, sentinelRef } = useProgressiveReveal(
+    visibleItems,
+    `${sortMode}|${genreFilter}|${yearFilter}|${languageFilter}|${searchQuery}`,
+  );
 
-  async function handleRemove(id: number) {
-    await removeItem(mediaType, id);
-    router.refresh();
+  // Menu actions update the grid immediately (optimistic), then sync with
+  // the server. On failure the change is rolled back and a toast says so,
+  // instead of leaving an uncaught server-action error in the console.
+  function failed(label: string, title: string, error: unknown) {
+    console.error(`[${label}] failed`, error);
+    showUndoToast({ title, action: "Couldn't update" });
   }
 
-  async function handleMoveToWishlist(id: number) {
-    await moveToWishlist(mediaType, id);
-    router.refresh();
+  async function handleRemove(item: LibraryItem) {
+    hide(item.id);
+    try {
+      const removed = await removeItem(mediaType, item.id);
+      router.refresh();
+      if (removed) {
+        showUndoToast({
+          title: item.title,
+          action: "Removed",
+          onUndo: async () => {
+            // Re-inserts with the original added date and Hall of Fame flag.
+            await restoreItem(mediaType, removed);
+            router.refresh();
+          },
+        });
+      }
+    } catch (error) {
+      unhide(item.id);
+      failed("remove", item.title, error);
+    }
+  }
+
+  async function handleMoveToWishlist(item: LibraryItem) {
+    hide(item.id);
+    try {
+      await moveToWishlist(mediaType, item.id);
+      router.refresh();
+      showUndoToast({ title: item.title, action: "Wishlisted" });
+    } catch (error) {
+      unhide(item.id);
+      failed("move to wishlist", item.title, error);
+    }
   }
 
   async function handleToggleFavorite(item: LibraryItem) {
-    await setFavorite(mediaType, item.id, !item.isFavorite);
-    router.refresh();
+    const next = !item.isFavorite;
+    patch(item.id, { isFavorite: next });
+    try {
+      await setFavorite(mediaType, item.id, next);
+      router.refresh();
+    } catch (error) {
+      unpatch(item.id);
+      failed("favorite", item.title, error);
+    }
   }
 
   function handleViewMoreInfo(item: LibraryItem) {
@@ -91,13 +158,13 @@ export function LibraryGrid({
         <ContextMenuItem onSelect={() => handleToggleFavorite(item)}>
           {item.isFavorite ? "Remove from Hall of Fame" : "Add to Hall of Fame"}
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => handleMoveToWishlist(item.id)}>
+        <ContextMenuItem onSelect={() => handleMoveToWishlist(item)}>
           Move to wishlist
         </ContextMenuItem>
         <ContextMenuItem onSelect={() => handleViewMoreInfo(item)}>
           View more info
         </ContextMenuItem>
-        <ContextMenuItem variant="destructive" onSelect={() => handleRemove(item.id)}>
+        <ContextMenuItem variant="destructive" onSelect={() => handleRemove(item)}>
           Remove
         </ContextMenuItem>
       </ContextMenuContent>
@@ -106,7 +173,7 @@ export function LibraryGrid({
 
   return (
     <div className="p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        {items.length > 0 && (
         <FilterSortBar
           sortMode={sortMode}
           onSortChange={setSortMode}
@@ -115,19 +182,55 @@ export function LibraryGrid({
           onGenreChange={setGenreFilter}
           yearFilter={yearFilter}
           onYearChange={setYearFilter}
+          yearOptions={yearOptions}
           languageOptions={languageOptions}
           languageFilter={languageFilter}
           onLanguageChange={setLanguageFilter}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          searchPlaceholder={mediaType === "game" ? "Search played games" : "Search watched titles"}
+          trailing={<ViewToggle mode={viewMode} onChange={setViewMode} />}
         />
-        <ViewToggle mode={viewMode} onChange={setViewMode} />
-      </div>
+        )}
 
       {items.length === 0 ? (
-        <p className="py-24 text-center text-text-muted">
-          Nothing here yet. Use Discover to add titles.
-        </p>
+        <EmptyState
+          icon={emptyIcon[mediaType]}
+          title={`No ${noun[mediaType]} logged yet`}
+          body={`Open Discover and click every poster you've ${mediaType === "game" ? "played" : "seen"}. Each click adds it here and pulls in similar titles.`}
+          action={
+            onDiscover ? (
+              <button type="button" onClick={onDiscover} className={emptyActionClass}>
+                <Compass className="size-4" />
+                Start discovering
+              </button>
+            ) : undefined
+          }
+        />
       ) : visibleItems.length === 0 ? (
-        <p className="py-24 text-center text-text-muted">No titles match these filters.</p>
+        <EmptyState
+          icon={SearchX}
+          title={
+            searchQuery.trim()
+              ? `Nothing matches “${searchQuery.trim()}”`
+              : "No titles match these filters"
+          }
+          body={`Only ${mediaType === "game" ? "games you've played" : "titles you've watched"} are searched here. Try a shorter name or clear the filters.`}
+          action={
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setGenreFilter("");
+                setYearFilter("");
+                setLanguageFilter("");
+              }}
+              className="rounded-md bg-surface-2 px-4 py-2 text-sm font-medium transition-colors hover:bg-border"
+            >
+              Clear search and filters
+            </button>
+          }
+        />
       ) : (
         <>
           {viewMode === "list" ? (

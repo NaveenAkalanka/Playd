@@ -52,12 +52,27 @@ function weightedInterleave<T>(
   return out;
 }
 
+// Suggestions are best-effort: if TMDB/IGDB fails even after retries, an
+// empty list lets the popup carry on (or show "No more titles") instead of
+// the whole server action rejecting into an uncaught client error.
+async function softFail(label: string, run: () => Promise<TitleCard[]>): Promise<TitleCard[]> {
+  try {
+    return await run();
+  } catch (error) {
+    console.error(`[discovery] ${label} failed:`, error);
+    return [];
+  }
+}
+
 export async function getDiscoveryBatch(
   mediaType: MediaType,
   page: number,
 ): Promise<TitleCard[]> {
   await requireAllowedUserOrThrow();
+  return softFail(`batch ${mediaType} p${page}`, () => loadDiscoveryBatch(mediaType, page));
+}
 
+async function loadDiscoveryBatch(mediaType: MediaType, page: number): Promise<TitleCard[]> {
   if (mediaType === "movie" || mediaType === "tv") {
     const discover = mediaType === "movie" ? discoverMovies : discoverTv;
     const [languageCounts, en, ko] = await Promise.all([
@@ -83,7 +98,9 @@ export async function getRecommendationsFor(
 ): Promise<TitleCard[]> {
   await requireAllowedUserOrThrow();
 
-  if (mediaType === "movie") return withPoster(await getMovieRecommendations(sourceId));
-  if (mediaType === "tv") return withPoster(await getTvRecommendations(sourceId));
-  return withPoster(await getSimilarGames(sourceId));
+  return softFail(`recommendations ${mediaType}:${sourceId}`, async () => {
+    if (mediaType === "movie") return withPoster(await getMovieRecommendations(sourceId));
+    if (mediaType === "tv") return withPoster(await getTvRecommendations(sourceId));
+    return withPoster(await getSimilarGames(sourceId));
+  });
 }

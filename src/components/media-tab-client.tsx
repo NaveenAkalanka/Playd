@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Compass } from "lucide-react";
 import { LibraryGrid } from "@/components/library-grid";
 import { DiscoveryPopup } from "@/components/discovery-popup";
+import { RESUMED_EVENT, readResumedAt, touchActivity } from "@/lib/activity";
 import type { MediaType } from "@/lib/normalize";
 
 interface LibraryItem {
@@ -23,10 +24,10 @@ const heading: Record<MediaType, string> = {
   game: "Games",
 };
 
-// Auto-open the popup on first visit, then again after this much idle time —
-// not on every tab click.
-const AUTO_OPEN_INTERVAL_MS = 60 * 60 * 1000;
-
+// Auto-open the popup the first time this tab is ever opened, and again
+// when you come back to the app after an hour of inactivity (see
+// lib/activity.ts) — not merely because an hour has passed while you've
+// been actively using the app.
 function lastShownKey(mediaType: MediaType) {
   return `playd:popup-last-shown:${mediaType}`;
 }
@@ -49,17 +50,32 @@ export function MediaTabClient({
   }
 
   useEffect(() => {
-    let lastShown = 0;
-    try {
-      lastShown = Number(localStorage.getItem(lastShownKey(mediaType)) ?? 0);
-    } catch {
-      // localStorage unavailable (private mode, etc.) — treat as first visit.
+    function maybeAutoOpen() {
+      // Record this visit first so a return after an idle hour is detected
+      // even if this runs before the app-wide ActivityTracker does.
+      touchActivity();
+      let lastShown = 0;
+      try {
+        lastShown = Number(localStorage.getItem(lastShownKey(mediaType)) ?? 0) || 0;
+      } catch {
+        // localStorage unavailable (private mode, etc.) — treat as first visit.
+      }
+      if (!lastShown || readResumedAt() > lastShown) {
+        markShown();
+        setPopupOpen(true);
+      }
     }
-    if (Date.now() - lastShown > AUTO_OPEN_INTERVAL_MS) {
-      markShown();
-      setPopupOpen(true);
-    }
-    // Only ever run once per mount — markShown intentionally excluded.
+
+    // Deferred to a task so the open happens as a response to the external
+    // check, not synchronously inside the effect body.
+    const timer = setTimeout(maybeAutoOpen, 0);
+    // Also catch a return from idle while this tab is already open.
+    window.addEventListener(RESUMED_EVENT, maybeAutoOpen);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener(RESUMED_EVENT, maybeAutoOpen);
+    };
+    // markShown intentionally excluded — it only depends on mediaType.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mediaType]);
 
@@ -81,7 +97,11 @@ export function MediaTabClient({
           Discover
         </button>
       </div>
-      <LibraryGrid mediaType={mediaType} items={items} />
+      <LibraryGrid
+        mediaType={mediaType}
+        items={items}
+        onDiscover={() => handleOpenChange(true)}
+      />
       <DiscoveryPopup
         mediaType={mediaType}
         open={popupOpen}

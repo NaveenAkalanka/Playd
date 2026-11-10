@@ -82,23 +82,26 @@ export async function moveToWishlist(
     .where(and(eq(libTable.id, id), eq(libTable.userId, user.id)));
   if (!row) return null;
 
-  const [inserted] = await db
-    .insert(wlTable)
-    .values({
-      userId: user.id,
-      sourceId: row.sourceId,
-      title: row.title,
-      year: row.year,
-      posterUrl: row.posterUrl,
-      genres: row.genres,
-      originalLanguage: row.originalLanguage,
-    })
-    .onConflictDoNothing()
-    .returning({ id: wlTable.id });
+  // One transaction: the title must never end up in both lists (or neither)
+  // if one of the two writes fails.
+  const [insertedRows] = await db.batch([
+    db
+      .insert(wlTable)
+      .values({
+        userId: user.id,
+        sourceId: row.sourceId,
+        title: row.title,
+        year: row.year,
+        posterUrl: row.posterUrl,
+        genres: row.genres,
+        originalLanguage: row.originalLanguage,
+      })
+      .onConflictDoNothing()
+      .returning({ id: wlTable.id }),
+    db.delete(libTable).where(and(eq(libTable.id, id), eq(libTable.userId, user.id))),
+  ]);
 
-  await db.delete(libTable).where(and(eq(libTable.id, id), eq(libTable.userId, user.id)));
-
-  return inserted ?? null;
+  return insertedRows[0] ?? null;
 }
 
 export async function markWishlistItemWatched(
@@ -111,25 +114,26 @@ export async function markWishlistItemWatched(
   const libTable = libraryTable(mediaType);
   const wlTable = wishlistTable(mediaType);
 
-  const [inserted] = await db
-    .insert(libTable)
-    .values({
-      userId: user.id,
-      sourceId: details.sourceId,
-      title: details.title,
-      year: details.year,
-      posterUrl: details.posterUrl,
-      backdropUrl: details.backdropUrl,
-      genres: details.genres,
-      runtimeMinutes: details.runtimeMinutes,
-      originalLanguage: details.originalLanguage,
-    })
-    .onConflictDoNothing()
-    .returning({ id: libTable.id });
+  const [insertedRows] = await db.batch([
+    db
+      .insert(libTable)
+      .values({
+        userId: user.id,
+        sourceId: details.sourceId,
+        title: details.title,
+        year: details.year,
+        posterUrl: details.posterUrl,
+        backdropUrl: details.backdropUrl,
+        genres: details.genres,
+        runtimeMinutes: details.runtimeMinutes,
+        originalLanguage: details.originalLanguage,
+      })
+      .onConflictDoNothing()
+      .returning({ id: libTable.id }),
+    db.delete(wlTable).where(and(eq(wlTable.id, id), eq(wlTable.userId, user.id))),
+  ]);
 
-  await db.delete(wlTable).where(and(eq(wlTable.id, id), eq(wlTable.userId, user.id)));
-
-  return inserted ?? null;
+  return insertedRows[0] ?? null;
 }
 
 export async function getWishlist(mediaType: MediaType) {

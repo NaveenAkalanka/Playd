@@ -14,9 +14,13 @@ import {
 } from "@/components/ui/context-menu";
 import { setFavorite } from "@/lib/actions/items";
 import { useViewMode } from "@/lib/use-view-mode";
+import { useUndoToast } from "@/components/undo-toast-provider";
 import { useProgressiveReveal } from "@/lib/use-progressive-reveal";
-import { applyFilterSort, deriveGenreOptions, deriveLanguageOptions } from "@/lib/filter-sort";
+import { useOptimisticItems } from "@/lib/use-optimistic-items";
+import { applyFilterSort, deriveGenreOptions, deriveLanguageOptions, deriveYearOptions } from "@/lib/filter-sort";
 import { externalInfoUrl } from "@/lib/external-links";
+import { EmptyState } from "@/components/empty-state";
+import { SearchX, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MediaType } from "@/lib/normalize";
 
@@ -38,12 +42,14 @@ const gridColsClass: Record<"sm" | "md" | "lg", string> = {
 
 export function HallOfFameGrid({
   mediaType,
-  items,
+  items: serverItems,
 }: {
   mediaType: MediaType;
   items: FavoriteItem[];
 }) {
   const router = useRouter();
+  const { showUndoToast } = useUndoToast();
+  const { items, hide, unhide } = useOptimisticItems(serverItems);
   const [viewMode, setViewMode] = useViewMode();
   const [sortMode, setSortMode] = useState<SortMode>("added");
   const [genreFilter, setGenreFilter] = useState("");
@@ -52,15 +58,35 @@ export function HallOfFameGrid({
 
   const genreOptions = useMemo(() => deriveGenreOptions(items), [items]);
   const languageOptions = useMemo(() => deriveLanguageOptions(items), [items]);
+  const yearOptions = useMemo(() => deriveYearOptions(items), [items]);
   const visibleItems = useMemo(
     () => applyFilterSort(items, { genreFilter, yearFilter, languageFilter, sortMode }),
     [items, genreFilter, yearFilter, languageFilter, sortMode],
   );
-  const { visibleItems: revealed, hasMore, sentinelRef } = useProgressiveReveal(visibleItems);
+  const { visibleItems: revealed, hasMore, sentinelRef } = useProgressiveReveal(
+    visibleItems,
+    `${sortMode}|${genreFilter}|${yearFilter}|${languageFilter}`,
+  );
 
-  async function handleRemove(id: number) {
-    await setFavorite(mediaType, id, false);
-    router.refresh();
+  async function handleRemove(item: FavoriteItem) {
+    hide(item.id);
+    try {
+      await setFavorite(mediaType, item.id, false);
+      router.refresh();
+      showUndoToast({
+        title: item.title,
+        action: "Unfavorited",
+        onUndo: async () => {
+          await setFavorite(mediaType, item.id, true);
+          unhide(item.id);
+          router.refresh();
+        },
+      });
+    } catch (error) {
+      unhide(item.id);
+      console.error("[hall of fame] remove failed", error);
+      showUndoToast({ title: item.title, action: "Couldn't update" });
+    }
   }
 
   function handleViewMoreInfo(item: FavoriteItem) {
@@ -77,7 +103,7 @@ export function HallOfFameGrid({
         <ContextMenuItem onSelect={() => handleViewMoreInfo(item)}>
           View more info
         </ContextMenuItem>
-        <ContextMenuItem variant="destructive" onSelect={() => handleRemove(item.id)}>
+        <ContextMenuItem variant="destructive" onSelect={() => handleRemove(item)}>
           Remove from Hall of Fame
         </ContextMenuItem>
       </ContextMenuContent>
@@ -86,29 +112,47 @@ export function HallOfFameGrid({
 
   return (
     <div className="p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <FilterSortBar
-          sortMode={sortMode}
-          onSortChange={setSortMode}
-          genreOptions={genreOptions}
-          genreFilter={genreFilter}
-          onGenreChange={setGenreFilter}
-          yearFilter={yearFilter}
-          onYearChange={setYearFilter}
-          languageOptions={languageOptions}
-          languageFilter={languageFilter}
-          onLanguageChange={setLanguageFilter}
-        />
-        <ViewToggle mode={viewMode} onChange={setViewMode} />
-      </div>
+      {items.length > 0 && (
+      <FilterSortBar
+        sortMode={sortMode}
+        onSortChange={setSortMode}
+        genreOptions={genreOptions}
+        genreFilter={genreFilter}
+        onGenreChange={setGenreFilter}
+        yearFilter={yearFilter}
+        onYearChange={setYearFilter}
+        yearOptions={yearOptions}
+        languageOptions={languageOptions}
+        languageFilter={languageFilter}
+        onLanguageChange={setLanguageFilter}
+        trailing={<ViewToggle mode={viewMode} onChange={setViewMode} />}
+      />
+      )}
 
       {items.length === 0 ? (
-        <p className="py-24 text-center text-text-muted">
-          Nothing here yet. Right-click a watched title and choose &quot;Add to Hall of
-          Fame&quot;.
-        </p>
+        <EmptyState
+          icon={Trophy}
+          title="No favorites yet"
+          body="In a Movies, TV or Games tab, right-click a title (or long-press on touch) and choose Add to Hall of Fame."
+        />
       ) : visibleItems.length === 0 ? (
-        <p className="py-24 text-center text-text-muted">No titles match these filters.</p>
+        <EmptyState
+          icon={SearchX}
+          title="No titles match these filters"
+          action={
+            <button
+              type="button"
+              onClick={() => {
+                setGenreFilter("");
+                setYearFilter("");
+                setLanguageFilter("");
+              }}
+              className="rounded-md bg-surface-2 px-4 py-2 text-sm font-medium transition-colors hover:bg-border"
+            >
+              Clear filters
+            </button>
+          }
+        />
       ) : (
         <>
           {viewMode === "list" ? (

@@ -7,21 +7,23 @@ const PAGE_SIZE = 60;
 /**
  * Reveals a growing slice of an already-fetched list as the user scrolls,
  * instead of mounting every poster card (and its context menu) up front —
- * that's what was making large libraries feel slow to render. Resets
- * whenever the list reference changes (e.g. a filter/sort change produces
- * a new filtered array).
+ * that's what was making large libraries feel slow to render.
+ *
+ * The revealed count resets only when `resetKey` changes (filters, sort,
+ * search) — NOT when the items themselves change. A menu action (Hall of
+ * Fame, remove, …) produces a new array; resetting then would collapse the
+ * grid back to the first page and throw the user back to the top.
  */
-export function useProgressiveReveal<T>(items: T[]) {
+export function useProgressiveReveal<T>(items: T[], resetKey: string) {
   const [count, setCount] = useState(PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  // Reset the revealed count when the (already-memoized) item list changes
-  // identity — e.g. a filter/sort change. Adjusting state during render
-  // instead of in an effect avoids an extra commit; see
+  // Adjusting state during render instead of in an effect avoids an extra
+  // commit; see
   // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
-  const [prevItems, setPrevItems] = useState(items);
-  if (prevItems !== items) {
-    setPrevItems(items);
+  const [prevKey, setPrevKey] = useState(resetKey);
+  if (prevKey !== resetKey) {
+    setPrevKey(resetKey);
     setCount(PAGE_SIZE);
   }
 

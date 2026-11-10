@@ -17,6 +17,10 @@ export function CountUp({ value }: { value: number }) {
   useEffect(() => {
     const el = ref.current;
     if (!el || finished.current) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      finished.current = true;
+      return;
+    }
 
     let frame = 0;
     const observer = new IntersectionObserver(([entry]) => {

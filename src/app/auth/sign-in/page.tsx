@@ -14,7 +14,7 @@ export default function SignInPage() {
   return (
     <form
       action={formAction}
-      className="flex min-h-screen flex-col items-center justify-center gap-5 bg-background px-4"
+      className="relative flex min-h-screen flex-col items-center justify-center gap-5 px-4 py-10"
     >
       <Image src="/icon-mark.svg" alt="" width={547} height={550} className="h-12 w-auto" />
       <h1 className="text-center text-2xl font-bold">Sign in to Playd</h1>

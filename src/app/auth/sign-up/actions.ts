@@ -2,14 +2,15 @@
 
 import { auth } from "@/lib/auth/server";
 import { redirect } from "next/navigation";
+import { isAllowedEmail } from "@/lib/auth/guard";
 
 export async function signUpWithEmail(
   _prevState: { error: string } | null,
   formData: FormData,
 ) {
-  const email = formData.get("email") as string;
+  const email = String(formData.get("email") ?? "").trim();
 
-  if (email !== process.env.ALLOWED_EMAIL) {
+  if (!isAllowedEmail(email)) {
     return { error: "This app is private. Sign-up is restricted." };
   }
 

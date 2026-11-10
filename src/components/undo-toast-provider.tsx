@@ -5,7 +5,9 @@ import { createContext, useCallback, useContext, useRef, useState } from "react"
 interface UndoToastState {
   title: string;
   // Omitted for a plain status message (e.g. "Copied") with no undo step.
-  onUndo?: () => void;
+  // May be async: a rejection is caught here and reported as "Couldn't undo"
+  // rather than surfacing as an uncaught server-action error.
+  onUndo?: () => void | Promise<unknown>;
   action?: string;
 }
 
@@ -40,9 +42,16 @@ export function UndoToastProvider({
               <button
                 type="button"
                 onClick={() => {
-                  toast.onUndo?.();
+                  const undo = toast.onUndo;
+                  const title = toast.title;
                   setToast(null);
                   if (timerRef.current) clearTimeout(timerRef.current);
+                  Promise.resolve()
+                    .then(() => undo?.())
+                    .catch((error) => {
+                      console.error("[undo] failed", error);
+                      showUndoToast({ title, action: "Couldn't undo" });
+                    });
                 }}
                 className="font-semibold text-accent hover:text-accent-hover"
               >

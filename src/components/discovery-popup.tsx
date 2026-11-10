@@ -22,6 +22,7 @@ import { addItem, getDiscoveryContext, removeItem } from "@/lib/actions/items";
 import { getDiscoveryBatch, getRecommendationsFor } from "@/lib/actions/discovery";
 import { addToWishlist, removeFromWishlist } from "@/lib/actions/wishlist";
 import { useUndoToast } from "@/components/undo-toast-provider";
+import { externalInfoUrl } from "@/lib/external-links";
 
 // The popup grid is 3/4/5 columns depending on viewport (see the grid
 // className below) — 60 is the LCM of those, so a full batch always ends
@@ -134,19 +135,26 @@ export function DiscoveryPopup({
     setLoading(true);
 
     (async () => {
-      const startPage = 1 + Math.floor(Math.random() * RANDOM_START_PAGE_RANGE);
-      const [context, initialPage] = await Promise.all([
-        getDiscoveryContext(mediaType),
-        getDiscoveryBatch(mediaType, startPage),
-      ]);
-      freshPage.current = startPage + 1;
-      for (const id of context.library) exclude.current.add(cardKey(mediaType, id));
-      for (const id of context.wishlisted) exclude.current.add(cardKey(mediaType, id));
-      fresh.current = initialPage;
+      try {
+        const startPage = 1 + Math.floor(Math.random() * RANDOM_START_PAGE_RANGE);
+        const [context, initialPage] = await Promise.all([
+          getDiscoveryContext(mediaType),
+          getDiscoveryBatch(mediaType, startPage),
+        ]);
+        freshPage.current = startPage + 1;
+        for (const id of context.library) exclude.current.add(cardKey(mediaType, id));
+        for (const id of context.wishlisted) exclude.current.add(cardKey(mediaType, id));
+        fresh.current = initialPage;
 
-      const firstBatch = await buildBatch(BATCH_SIZE);
-      setBatch(firstBatch);
-      setLoading(false);
+        const firstBatch = await buildBatch(BATCH_SIZE);
+        setBatch(firstBatch);
+      } catch (error) {
+        console.error("[discovery] initial load failed", error);
+        // Let the next open (or the refresh button) try again.
+        initialized.current = false;
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [open, mediaType, buildBatch]);
 
@@ -163,10 +171,11 @@ export function DiscoveryPopup({
     if (!currentKeysRef.current.has(key)) return;
     setBatch((prev) => prev.filter((c) => cardKey(c.mediaType, c.sourceId) !== key));
 
-    (async () => {
-      const replacement = await takeNext();
-      if (replacement) setBatch((prev) => [...prev, replacement]);
-    })();
+    takeNext()
+      .then((replacement) => {
+        if (replacement) setBatch((prev) => [...prev, replacement]);
+      })
+      .catch((error) => console.error("[discovery] replacement failed", error));
   }
 
   // Cards that scroll past unclicked are assumed unwanted and get quietly
@@ -261,19 +270,33 @@ export function DiscoveryPopup({
     removeCardFromBatch(card);
 
     (async () => {
-      const [replacement, inserted] = await Promise.all([
+      // allSettled: a failed recommendation lookup must not swallow a
+      // successful add (or its Undo), and vice versa.
+      const [replacementResult, insertResult] = await Promise.allSettled([
         pickSimilarReplacement(card),
         addItem(card.mediaType, card.sourceId),
       ]);
+      const replacement = replacementResult.status === "fulfilled" ? replacementResult.value : null;
 
+      if (insertResult.status === "rejected") {
+        console.error("[discovery] add failed", insertResult.reason);
+        // Put the poster back so the click isn't silently lost.
+        setBatch((prev) => [card, ...prev]);
+        showUndoToast({ title: card.title, action: "Couldn't add" });
+        if (replacement) similar.current.unshift(replacement);
+        return;
+      }
       if (replacement) setBatch((prev) => [...prev, replacement]);
 
+      const inserted = insertResult.value;
       if (inserted) {
         router.refresh();
         showUndoToast({
           title: card.title,
-          onUndo: () => {
-            removeItem(card.mediaType, inserted.id);
+          onUndo: async () => {
+            await removeItem(card.mediaType, inserted.id);
+            // Undo means "I didn't mean to click that" — put the poster back.
+            setBatch((prev) => [card, ...prev]);
             router.refresh();
           },
         });
@@ -285,20 +308,30 @@ export function DiscoveryPopup({
     removeCardFromBatch(card);
 
     (async () => {
-      const [replacement, inserted] = await Promise.all([
+      const [replacementResult, insertResult] = await Promise.allSettled([
         pickSimilarReplacement(card),
         addToWishlist(card.mediaType, card.sourceId),
       ]);
+      const replacement = replacementResult.status === "fulfilled" ? replacementResult.value : null;
 
+      if (insertResult.status === "rejected") {
+        console.error("[discovery] wishlist add failed", insertResult.reason);
+        setBatch((prev) => [card, ...prev]);
+        showUndoToast({ title: card.title, action: "Couldn't wishlist" });
+        if (replacement) similar.current.unshift(replacement);
+        return;
+      }
       if (replacement) setBatch((prev) => [...prev, replacement]);
 
+      const inserted = insertResult.value;
       if (inserted) {
         router.refresh();
         showUndoToast({
           title: card.title,
           action: "Wishlisted",
-          onUndo: () => {
-            removeFromWishlist(card.mediaType, inserted.id);
+          onUndo: async () => {
+            await removeFromWishlist(card.mediaType, inserted.id);
+            setBatch((prev) => [card, ...prev]);
             router.refresh();
           },
         });
@@ -316,18 +349,24 @@ export function DiscoveryPopup({
       exclude.current.add(cardKey(card.mediaType, card.sourceId));
     }
 
-    const nextBatch = await buildBatch(BATCH_SIZE);
-    setBatch(nextBatch);
-    setLoading(false);
-    scrollRef.current?.scrollTo({ top: 0 });
+    await loadNewBatch();
   }
 
   async function handleRefresh() {
     setLoading(true);
-    const nextBatch = await buildBatch(BATCH_SIZE);
-    setBatch(nextBatch);
-    setLoading(false);
-    scrollRef.current?.scrollTo({ top: 0 });
+    await loadNewBatch();
+  }
+
+  async function loadNewBatch() {
+    try {
+      const nextBatch = await buildBatch(BATCH_SIZE);
+      setBatch(nextBatch);
+      scrollRef.current?.scrollTo({ top: 0 });
+    } catch (error) {
+      console.error("[discovery] loading a batch failed", error);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -373,6 +412,17 @@ export function DiscoveryPopup({
                     <ContextMenuContent>
                       <ContextMenuItem onSelect={() => handleAddToWishlist(card)}>
                         Add to wishlist
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onSelect={() =>
+                          window.open(
+                            externalInfoUrl(card.mediaType, card.sourceId, card.title),
+                            "_blank",
+                            "noopener,noreferrer",
+                          )
+                        }
+                      >
+                        View more info
                       </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenu>

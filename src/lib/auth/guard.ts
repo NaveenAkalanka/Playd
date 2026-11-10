@@ -10,6 +10,12 @@ import { enforceRateLimit } from "@/lib/rate-limit";
 // a runaway script or a compromised session from hammering the app.
 const GENERAL_LIMIT = 300;
 
+/** Email addresses are case-insensitive in practice — compare normalized. */
+export function isAllowedEmail(email: string | null | undefined): boolean {
+  const allowed = process.env.ALLOWED_EMAIL?.trim().toLowerCase();
+  return Boolean(allowed && email && email.trim().toLowerCase() === allowed);
+}
+
 /** Use in Server Components / layouts: redirects instead of returning an error. */
 export async function requireAllowedUserOrRedirect() {
   await enforceRateLimit("app", GENERAL_LIMIT);
@@ -18,7 +24,7 @@ export async function requireAllowedUserOrRedirect() {
   if (!session?.user) {
     redirect("/auth/sign-in");
   }
-  if (session.user.email !== process.env.ALLOWED_EMAIL) {
+  if (!isAllowedEmail(session.user.email)) {
     redirect("/forbidden");
   }
 
@@ -38,7 +44,7 @@ export async function requireAllowedUserOrThrow() {
   if (!session?.user) {
     redirect("/auth/sign-in");
   }
-  if (session.user.email !== process.env.ALLOWED_EMAIL) {
+  if (!isAllowedEmail(session.user.email)) {
     throw new Error("Forbidden");
   }
 

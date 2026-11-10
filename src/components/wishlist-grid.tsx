@@ -15,9 +15,12 @@ import {
 import { markWishlistItemWatched, removeFromWishlist } from "@/lib/actions/wishlist";
 import { useViewMode } from "@/lib/use-view-mode";
 import { useProgressiveReveal } from "@/lib/use-progressive-reveal";
+import { useOptimisticItems } from "@/lib/use-optimistic-items";
 import { useUndoToast } from "@/components/undo-toast-provider";
-import { applyFilterSort, deriveGenreOptions, deriveLanguageOptions } from "@/lib/filter-sort";
+import { applyFilterSort, deriveGenreOptions, deriveLanguageOptions, deriveYearOptions } from "@/lib/filter-sort";
 import { externalInfoUrl } from "@/lib/external-links";
+import { EmptyState } from "@/components/empty-state";
+import { Bookmark, SearchX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MediaType } from "@/lib/normalize";
 
@@ -38,9 +41,10 @@ const gridColsClass: Record<"sm" | "md" | "lg", string> = {
   lg: "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5",
 };
 
-export function WishlistGrid({ items }: { items: WishlistItem[] }) {
+export function WishlistGrid({ items: serverItems }: { items: WishlistItem[] }) {
   const router = useRouter();
   const { showUndoToast } = useUndoToast();
+  const { items, hide, unhide } = useOptimisticItems(serverItems);
   const [viewMode, setViewMode] = useViewMode();
   const [sortMode, setSortMode] = useState<SortMode>("added");
   const [genreFilter, setGenreFilter] = useState("");
@@ -49,20 +53,46 @@ export function WishlistGrid({ items }: { items: WishlistItem[] }) {
 
   const genreOptions = useMemo(() => deriveGenreOptions(items), [items]);
   const languageOptions = useMemo(() => deriveLanguageOptions(items), [items]);
+  const yearOptions = useMemo(() => deriveYearOptions(items), [items]);
   const visibleItems = useMemo(
     () => applyFilterSort(items, { genreFilter, yearFilter, languageFilter, sortMode }),
     [items, genreFilter, yearFilter, languageFilter, sortMode],
   );
-  const { visibleItems: revealed, hasMore, sentinelRef } = useProgressiveReveal(visibleItems);
+  const { visibleItems: revealed, hasMore, sentinelRef } = useProgressiveReveal(
+    visibleItems,
+    `${sortMode}|${genreFilter}|${yearFilter}|${languageFilter}`,
+  );
 
-  async function handleMarkWatched(item: WishlistItem) {
-    await markWishlistItemWatched(item.mediaType, item.id, item.sourceId);
-    router.refresh();
+  // Optimistic: the poster leaves the grid at once; on failure it comes
+  // back and a toast says so, instead of an uncaught server-action error.
+  async function run(
+    label: string,
+    item: WishlistItem,
+    doneLabel: string,
+    action: () => Promise<unknown>,
+  ) {
+    hide(item.id);
+    try {
+      await action();
+      router.refresh();
+      showUndoToast({ title: item.title, action: doneLabel });
+    } catch (error) {
+      unhide(item.id);
+      console.error(`[${label}] failed`, error);
+      showUndoToast({ title: item.title, action: "Couldn't update" });
+    }
   }
 
-  async function handleRemove(item: WishlistItem) {
-    await removeFromWishlist(item.mediaType, item.id);
-    router.refresh();
+  function handleMarkWatched(item: WishlistItem) {
+    return run("mark watched", item, "Added", () =>
+      markWishlistItemWatched(item.mediaType, item.id, item.sourceId),
+    );
+  }
+
+  function handleRemove(item: WishlistItem) {
+    return run("remove from wishlist", item, "Removed", () =>
+      removeFromWishlist(item.mediaType, item.id),
+    );
   }
 
   async function handleCopyTitle(item: WishlistItem) {
@@ -100,28 +130,47 @@ export function WishlistGrid({ items }: { items: WishlistItem[] }) {
 
   return (
     <div className="p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <FilterSortBar
-          sortMode={sortMode}
-          onSortChange={setSortMode}
-          genreOptions={genreOptions}
-          genreFilter={genreFilter}
-          onGenreChange={setGenreFilter}
-          yearFilter={yearFilter}
-          onYearChange={setYearFilter}
-          languageOptions={languageOptions}
-          languageFilter={languageFilter}
-          onLanguageChange={setLanguageFilter}
-        />
-        <ViewToggle mode={viewMode} onChange={setViewMode} />
-      </div>
+      {items.length > 0 && (
+      <FilterSortBar
+        sortMode={sortMode}
+        onSortChange={setSortMode}
+        genreOptions={genreOptions}
+        genreFilter={genreFilter}
+        onGenreChange={setGenreFilter}
+        yearFilter={yearFilter}
+        onYearChange={setYearFilter}
+        yearOptions={yearOptions}
+        languageOptions={languageOptions}
+        languageFilter={languageFilter}
+        onLanguageChange={setLanguageFilter}
+        trailing={<ViewToggle mode={viewMode} onChange={setViewMode} />}
+      />
+      )}
 
       {items.length === 0 ? (
-        <p className="py-24 text-center text-text-muted">
-          Nothing in your wishlist yet.
-        </p>
+        <EmptyState
+          icon={Bookmark}
+          title="Your wishlist is empty"
+          body="In Discover or Search, right-click a poster (or long-press on touch) and choose Add to wishlist to save it for later."
+        />
       ) : visibleItems.length === 0 ? (
-        <p className="py-24 text-center text-text-muted">No titles match these filters.</p>
+        <EmptyState
+          icon={SearchX}
+          title="No titles match these filters"
+          action={
+            <button
+              type="button"
+              onClick={() => {
+                setGenreFilter("");
+                setYearFilter("");
+                setLanguageFilter("");
+              }}
+              className="rounded-md bg-surface-2 px-4 py-2 text-sm font-medium transition-colors hover:bg-border"
+            >
+              Clear filters
+            </button>
+          }
+        />
       ) : (
         <>
           {viewMode === "list" ? (

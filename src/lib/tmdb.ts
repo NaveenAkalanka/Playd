@@ -84,18 +84,29 @@ async function tmdbFetch<T>(
     url.searchParams.set(key, value);
   }
 
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${process.env.TMDB_READ_TOKEN}`,
-      Accept: "application/json",
-    },
-  });
+  // Retry transient failures (rate limit / server errors) with backoff
+  // rather than failing the whole server action on one blip.
+  let lastStatus = 0;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${process.env.TMDB_READ_TOKEN}`,
+        Accept: "application/json",
+      },
+    });
 
-  if (!res.ok) {
-    throw new Error(`TMDB request failed: ${res.status} ${path}`);
+    if (res.ok) return res.json() as Promise<T>;
+
+    lastStatus = res.status;
+    if (!(res.status === 429 || res.status >= 500) || attempt === 3) break;
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const backoffMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter * 1000
+      : 300 * 2 ** (attempt - 1);
+    await new Promise((resolve) => setTimeout(resolve, backoffMs));
   }
 
-  return res.json() as Promise<T>;
+  throw new Error(`TMDB request failed: ${lastStatus} ${path}`);
 }
 
 function posterUrl(path: string | null): string | null {
